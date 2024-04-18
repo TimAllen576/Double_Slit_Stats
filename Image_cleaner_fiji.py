@@ -2,59 +2,32 @@
 separates out images with only one active pixel
 """
 
-import imagej
 import numpy as np
+import pandas as pd
 import h5py
+import os
+import re
 
-# Start ImageJ
-ij = imagej.init("C:/Users/twlln/Progs/Fiji.app")
+clean_data = None
+hdf_folder = r"C:\Users\Timojhoe\Documents\Uni\Fourth year\Double_Slit_Stats\hdf_files"
+hdf_files = [f for f in os.listdir(hdf_folder) if f.endswith(".hdf")]
 
-# Open HDF5 file
-file_path = "C:/Users/twlln/Downloads/example-femm-3d.h5"
-hdf5_file = h5py.File(file_path, "r")
+for file in hdf_files:
+    hdf5_file = h5py.File(hdf_folder + "\\" + file)
+    data = hdf5_file["entry/data/data"]
+    # print(data.dtype)
+    for slice_num, imslice in enumerate(data):
+        indices = np.argwhere(imslice == 1)
+        if len(indices) == 1:
+            index = indices[0][::-1]
+            file_id = re.findall(r'\d+', file)
+            info = np.hstack(
+                (index, slice_num, int(file_id[0]), int(file_id[1])))
+            if clean_data is None:
+                clean_data = info
+            else:
+                clean_data = np.vstack((clean_data, info))
+    hdf5_file.close()
 
-# Get the dataset containing images
-images_dataset = hdf5_file["images"]
-
-# Select the first frame to calculate mask
-first_frame = images_dataset[0]
-ij.py.show(first_frame)
-
-# Apply a median filter to smooth the image
-ij.py.run_macro("""
-        run("Median...", "radius=2");
-        setAutoThreshold("Default dark");
-        run("Convert to Mask");
-        run("Fill Holes");
-        run("Options...", "iterations=1 count=1 black edm=Overwrite");
-        run("Invert");
-        """, interactive=False)
-
-# Save the mask
-mask = ij.py.get_image()
-mask_path = "path/to/save/mask.tif"
-ij.py.save_as(mask, "Tiff", mask_path)
-
-# Process each frame
-for i in range(1, len(images_dataset)):
-    frame = images_dataset[i]
-
-    # Apply the previously calculated mask
-    mask = ij.py.open(mask_path)
-    ij.py.run("Multiply...", "value=255")
-
-    # Apply the mask to original image
-    frame = np.array(frame) * np.array(mask)
-
-    # Save the processed image
-    processed_image_path = f"path/to/save/processed_image_{i}.tif"
-    ij.py.save_as(frame, "Tiff", processed_image_path)
-
-    # Close the mask
-    ij.py.close()
-
-# Close the HDF5 file
-hdf5_file.close()
-
-# Dispose ImageJ
-ij.dispose()
+pd.DataFrame(clean_data).to_csv("clean_data.csv", index=False, sep="\t",
+                                header=["x", "y", "slice", "Y", "Z"])
