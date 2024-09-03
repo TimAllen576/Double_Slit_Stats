@@ -29,5 +29,5 @@ for file in hdf_files:
                 clean_data = np.vstack((clean_data, info))
     hdf5_file.close()
 
-pd.DataFrame(clean_data).to_csv("clean_data.csv", index=False, sep="\t",
+pd.DataFrame(clean_data).to_csv("clean_data_full.csv", index=False, sep="\t",
                                 header=["x", "y", "slice", "Y", "Z"])
