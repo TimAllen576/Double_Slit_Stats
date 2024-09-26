@@ -10,35 +10,25 @@ from matplotlib.animation import PillowWriter
 WAVELENGTH = 1240 * 10 ** -9 / (25 * 10 ** 3)
 microns = 10 ** -6
 pixel_size = 75 * microns
-min_distance = -138.5 * pixel_size
-max_distance = 138.5 * pixel_size
+MIN_DISTANCE = -138.5 * pixel_size
+MAX_DISTANCE = 138.5 * pixel_size
 
-I0 = 1  # Incident photon fluence
-Ib = 0  # Background fluence
+I0 = 1.0  # Incident photon fluence
+Ib = 0.0  # Background fluence
 # d = 3 * microns  # Width of each slit
-d = 1.6 * microns
-L = 36  # Source to slits distance
-R = 110  # Slit to detector distance
+d_halfopt = 1.6 * microns
+L = 36.0  # Source to slits distance
+R = 110.0  # Slit to detector distance
 # D = 6 * microns  # Separation between slits
-D = 5.5 * microns
-s = 40 * microns  # Size of light source along y-axis (slit height?)
+D_halfopt = 5.5 * microns
+s_unopt = 40 * microns  # Size of light source along y-axis (slit height?)
 E = 25 * 10 ** 3  # Photon energy
+POPT = [1.56251700e-04, 1.68774246e-06, 5.41761927e-06]
+sub_region_photons = 207570
 
 
-# max_x = 289
-# max_y = 276
-
-
-def plotter(data, theoretical):
-    """Plots a given dataset"""
-    x_values = np.arange(len(data))
-    fig, ax = plt.subplots()
-    ax.plot(x_values, data)
-    ax.plot(x_values, theoretical)
-    ax.set(xlabel="X_pixel", ylabel="Counts", title="Y2s Data")
-    plt.grid(True)
-    plt.savefig("Y2s_full.svg")
-    plt.show()
+MAX_x = 289
+MAX_y = 276
 
 
 def chi_squared_test(observed, theoretical):
@@ -58,21 +48,36 @@ def chi_squared_test(observed, theoretical):
 
 # def cramer_von_mises_test(data):
 #
-def theoretical_distribution_2s(number_points=10000, wavelength=WAVELENGTH):
+def theoretical_distribution_2s(s=s_unopt, d=d_halfopt,
+        D=D_halfopt, number_points=10000, wavelength=WAVELENGTH):
     """Creates a theoretical distribution for the data."""
     # wavelength = 1240 * 10 ** -9 / E
     A = 2 * wavelength * R / d  # Single slit equivalent (envelope)
     a = wavelength * R / D  # Period of 2s interference
     t = s * D / (wavelength * L)
     V = np.sin(np.pi * t) / (np.pi * t)
-    x = np.linspace(min_distance, max_distance,
-                    int((max_distance - min_distance) / pixel_size))
+    x = np.linspace(MIN_DISTANCE, MAX_DISTANCE,
+                    int((MAX_DISTANCE - MIN_DISTANCE) / pixel_size))
     y_values = (2 * I0 * (np.divide(
         np.sin(2 * np.pi * x / A), (2 * np.pi * x / A), out=np.ones_like(x),
         where=x != 0)) ** 2 * (1 + V * np.cos(2 * np.pi * x / a)) + Ib)
     scale = np.sum(y_values)
     y_values = y_values * number_points / scale
     return y_values
+
+
+def theoretical_distribution_opt(x, s=s_unopt, d=d_halfopt, D=D_halfopt):
+    """Creates a theoretical distribution for the data."""
+    A = 2 * WAVELENGTH * R / d  # Single slit equivalent (envelope)
+    a = WAVELENGTH * R / D  # Period of 2s interference
+    t = s * D / (WAVELENGTH * L)
+    V = np.sin(np.pi * t) / (np.pi * t)
+    y_values = (2 * I0 * (np.divide(np.sin(2 * np.pi * x / A),
+        (2 * np.pi * x / A),
+        out=np.ones_like(x),where=x != 0)) ** 2 * (
+            1 + V * np.cos(2 * np.pi * x / a)) + Ib)
+    y_values_scaled = 207570 * y_values / np.sum(y_values)
+    return y_values_scaled
 
 
 # def theoretical_distribution_1s(number_points,wavelength=WAVELENGTH):
@@ -140,9 +145,9 @@ def plotter_anim(data, theoretical, y_values):
 
 
 def masker(data, min_x, max_x, min_y, max_y):
-    """Mask out bad data"""
-    mask_x = (data["x"] >= min_x) & (data["x"] <= max_x)
-    mask_y = (data["y"] >= min_y) & (data["y"] <= max_y)
+    """Mask out bad data, includes mins but not maxes"""
+    mask_x = (data["x"] >= min_x) & (data["x"] < max_x)
+    mask_y = (data["y"] >= min_y) & (data["y"] < max_y)
     mask = mask_x & mask_y
     data_masked = data[mask]
     return data_masked
@@ -150,10 +155,10 @@ def masker(data, min_x, max_x, min_y, max_y):
 
 def calc_snr(obs_data, theory_1s, theory_2s):
     """Calculates a custom version of an SNR^2"""
-    split_snr_1s = np.sum(
-        2 * (obs_data - theory_1s) ** 2 / (obs_data + theory_1s))
-    split_snr_2s = np.sum(
-        2 * (obs_data - theory_2s) ** 2 / (obs_data + theory_2s))
+    split_snr_1s = 2 * np.sum(
+        (obs_data - theory_1s) ** 2 / (obs_data + theory_1s))
+    split_snr_2s = 2 * np.sum(
+        (obs_data - theory_2s) ** 2 / (obs_data + theory_2s))
     return split_snr_1s, split_snr_2s
 
 
@@ -163,45 +168,54 @@ def check_snr2(obs_values):
     min_y = 121
     num_y = 42
     max_y = min_y + num_y
-    small_mask_obs = masker(obs_values, 126, 162, min_y, max_y)
+    obs_subregion = masker(obs_values, 126, 162, min_y, max_y)
     snr2_1s_list = []
     snr2_2s_list = []
-    for num_frames in range(10, 1000):
+    x = np.linspace(MIN_DISTANCE, MAX_DISTANCE,
+                    int((MAX_DISTANCE - MIN_DISTANCE) / pixel_size))
+    theoretical_dist_2s = theoretical_distribution_opt(x, *POPT)
+    subregion_2s = theoretical_dist_2s[min_y - 1:max_y - 1]
+    for num_frames in range(10, 207570):
         start_frame = 0
-        y_values = small_mask_obs["y"][start_frame:start_frame + num_frames]
-        small_mask_dist = np.bincount(y_values)
+        obs_frame_limit = obs_subregion["y"][start_frame:start_frame + num_frames]
+        obs_dist_frame_limit = np.bincount(obs_frame_limit)
         # drop zero values from small_mask_dist
-        small_mask_dist_new = small_mask_dist[min_y + 1:]
+        obs_drop_zero = obs_dist_frame_limit[min_y:]
         # Pad the end with zeroes so it is 42 long
-        small_mask_dist_pad = np.pad(small_mask_dist_new,
-                                     (0, num_y - len(small_mask_dist_new)))
-        theoretical_dist = theoretical_distribution_2s()
-        small_theory_dist = theoretical_dist[min_y:max_y]
-        small_theory_dist = small_theory_dist * len(y_values) / np.sum(
-            small_theory_dist)
-
-        theory_1s_values_scaled = theory_1s_values * num_frames / 70
-        snr2_1s, snr2_2s = calc_snr(small_mask_dist_pad,
+        obs_padded = np.pad(obs_drop_zero, (0, num_y - len(obs_drop_zero)))
+        theory_2s_scaled = subregion_2s * len(obs_frame_limit) / np.sum(
+            subregion_2s)
+        theory_1s_values_scaled = theory_1s_values * len(obs_frame_limit) / 70
+        # obs_padded = np.divide(obs_padded, np.sum(obs_padded))
+        # theory_2s_scaled = np.divide(theory_2s_scaled, np.sum(theory_2s_scaled))
+        # theory_1s_values_scaled = np.divide(theory_1s_values_scaled,
+        #                                    np.sum(theory_1s_values_scaled))
+        snr2_1s, snr2_2s = calc_snr(obs_padded,
                                     theory_1s_values_scaled,
-                                    small_theory_dist)
+                                    theory_2s_scaled)
+        snr2_1s /= num_frames
+        snr2_2s /= num_frames
         snr2_1s_list.append(snr2_1s)
         snr2_2s_list.append(snr2_2s)
-    # plt.plot(snr2_1s_list, label="1s")
-    # plt.plot(snr2_2s_list, label="2s")
-    # plt.title("SNR^2 for increasing photons in the 37x42 region")
-    # plt.xlabel("Number of detected photons")
-    # plt.ylabel("SNR^2")
-    # plt.legend()
-    # plt.show()
-    xs = np.arange(len(small_mask_dist_pad))
-    plt.plot(xs, small_mask_dist_pad, label="Experimental")
-    plt.plot(xs, small_theory_dist, label="Theoretical 2s")
-    plt.plot(xs, theory_1s_values, label="Theoretical 1s")
+    plt.plot(snr2_1s_list, label="1s")
+    plt.plot(snr2_2s_list, label="2s")
+    plt.title("SNR^2 for increasing photons in the 37x42 region")
+    plt.xlabel("Number of detected photons")
+    plt.ylabel("SNR^2")
+    plt.legend()
+    plt.show()
+    # print(f"SNR^2 1s: {snr2_1s}")
+    # print(f"SNR^2 2s: {snr2_2s}")
+    xs = np.arange(len(obs_padded))
+    plt.plot(xs, obs_padded, ".-", label="Experimental")
+    plt.plot(xs, theory_2s_scaled, ".-", label="Theoretical 2s")
+    plt.plot(xs, theory_1s_values_scaled, ".-", label="Theoretical 1s")
     plt.title("Sub-region plot of experimental and theoretical data")
     plt.ylabel("Counts")
     plt.xlabel("Y Pixel Coordinate")
     plt.legend()
     plt.show()
+
     # plt.savefig("Plots/Sub_region_plot.png")
     # print(f"Number of pixels: {len(y_values)}")
     # print(f"SNR^2 1s: {snr2_1s}")
@@ -219,37 +233,6 @@ def single_plotter(data, **settings):
     plt.show()
 
 
-def extract_background(obs_values):
-    """create the array bad area which is the number of pixels with x value
-    below 50 for each y value"""
-    bad_area = np.zeros(277)
-    for i in range(277):
-        bad_area[i] = np.sum(obs_values["x"][obs_values["y"] == i] < 50)
-    bad_total = 2 * bad_area * (150 ** 2) / (50 ** 2)  # Extrapolation
-    y_values = np.bincount(obs_values["y"])
-    good_y = y_values - bad_total
-    x_values = np.arange(len(good_y))
-    fig, ax = plt.subplots()
-    ax.plot(x_values, good_y)
-    ax.set(xlabel="X_pixel", ylabel="Counts", title="Band subtracted data")
-    plt.grid(True)
-    plt.show()
-
-
-def edge_plotter(data):
-    """Plots the edge data"""
-    edge_data = masker(data, 250, np.max(data["x"]), 0, np.max(
-        data["y"]))
-    y_values = np.bincount(edge_data["y"])
-    # print the index of the maximum value
-    print(np.argmax(y_values))
-    fig, ax = plt.subplots()
-    ax.plot(y_values)
-    ax.set(xlabel="Y_pixel", ylabel="Counts", title="Edge data")
-    plt.grid(True)
-    plt.show()
-
-
 def gaussian(x, a, b, c, offset):
     """Gaussian function"""
     return a * np.exp(-(x - b) ** 2 / c) + offset
@@ -257,24 +240,99 @@ def gaussian(x, a, b, c, offset):
 
 def band_isolation(data):
     """Masks out the good and bad data then takes the difference"""
+    y_width = 1
+    area_list = []
+    for y_start in np.arange(0, MAX_y + 1, y_width):
+        bad_data = data[
+            (data["y"] >= y_start) & (data["y"] <= y_start + y_width)]
+        bad_x = np.bincount(bad_data["x"])
+        x = np.arange(len(bad_x))
+        # Mask out the good data
+        mask = (x < 50) | (x > 250)
+        x_edges = x[mask].astype(float)
+        data_edges = bad_x[mask].astype(float)
+        for stddev in [10000000, 1000000, 100000, 50000, 22000]:
+            try:
+                # noinspection PyTupleAssignmentBalance
+                popt, _ = sc.optimize.curve_fit(gaussian, x_edges, data_edges,
+                                                p0=[np.max(bad_x), 150, stddev, 0])
+                break
+            except:
+                continue
+        data_central_pred = gaussian(x, *popt)
+        area = np.trapezoid(data_central_pred, x)
+        area_list.append(area)
+    spread_x = np.repeat(area_list, y_width) // y_width
+    final_section = y_width - (len(spread_x) - (MAX_y+1))
+    if final_section == 0:
+        bad_summed_x = spread_x
+    else:
+        bad_summed_x = spread_x[:MAX_y+1]
+        bad_summed_x[len(bad_summed_x)-final_section:] *= y_width // final_section
+    return bad_summed_x
+
+
+def band_iso_single(data):
+    """Masks out the good and bad data then takes the difference"""
+    y_width = 1
+    area_list = []
+    y_start = 150
     bad_data = data[
-        (data["y"] >= 115) & (data["y"] <= 125)]
+        (data["y"] >= y_start) & (data["y"] <= y_start + y_width)]
     bad_x = np.bincount(bad_data["x"])
-    # x_no_gap = np.concatenate((bad_x[:50], bad_x[250:]))
-    # popt, _ = sc.optimize.curve_fit(gaussian, x_no_gap, np.ones_like(x_no_gap),
-    #                     p0=[1, np.mean(x_no_gap), np.std(x_no_gap), 0])
-    #
-    # #
-
-
-
-
-    good_data = data[
-        (data["y"] >= 151) & (data["y"] <= 161)]
-    good_x = np.bincount(good_data["x"])
-    difference = bad_x - good_x
+    x = np.arange(len(bad_x))
+    # Mask out the good data
+    mask = (x < 50) | (x > 250)
+    x_edges = x[mask].astype(float)
+    data_edges = bad_x[mask].astype(float)
+    for stddev in [10000000, 1000000, 100000, 50000, 22000]:
+        try:
+            # noinspection PyTupleAssignmentBalance
+            popt, _ = sc.optimize.curve_fit(gaussian, x_edges, data_edges,
+                                            p0=[np.max(bad_x), 150, stddev, 0])
+            break
+        except:
+            continue
+    # print(popt)
+    data_central_pred = gaussian(x, *popt)
+    plt.plot(bad_x, ".-", label='Original Data')
+    plt.plot(x, data_central_pred,
+             label='Fitted Central Data')
+    plt.legend()
+    plt.show(block=True)
+    difference = bad_x - data_central_pred
     single_plotter(difference, xlabel="X_pixel", ylabel="Counts",
                    title="Data subtracted band")
+
+
+def subregion_optmized(data):
+    min_y = 121
+    num_y = 42
+    max_y = min_y + num_y
+    obs_subregion = masker(data, 126, 162, min_y, max_y)
+    obs_dist = np.bincount(obs_subregion["y"])
+    obs_drop_zero = obs_dist[min_y:]
+    # Right shift one
+    y_coords = np.arange(-18, 24, dtype=float) * pixel_size
+    # popt, pcov = sc.optimize.curve_fit(
+    #     theoretical_distribution_opt, y_coords, obs_drop_zero,
+    #     p0=[s_unopt, d_halfopt, D_halfopt],
+    #     bounds=([microns, 0.1*microns, 0.1*microns], [1, 1, 1]))
+    popt, pcov = sc.optimize.curve_fit(
+        theoretical_distribution_opt, y_coords, obs_drop_zero,
+        p0=[s_unopt],
+        bounds=([microns], [1]))
+    theoretical_distribution = theoretical_distribution_opt(y_coords, *popt)
+    plt.plot(y_coords/microns, obs_drop_zero, ".-", label="Experimental")
+    plt.plot(y_coords/microns, theoretical_distribution, ".-", label="Theoretical")
+    # plt.title(f"Optimized sub-region plot with \ns={popt[0]/microns:.2f} microns, "
+    #           f"d={popt[1]/microns:.2f} microns, D={popt[2]/microns:.2f} microns")
+    plt.title(f"Optimized sub-region plot with \ns={popt[0]/microns:.2f} microns, "
+              f"d={d_halfopt/microns:.2f} microns, D={D_halfopt/microns:.2f} microns")
+    plt.xlabel("Y dist from centre of interference(microns)")
+    plt.ylabel("Counts")
+    plt.legend()
+    plt.show()
 
 
 def main():
@@ -285,11 +343,22 @@ def main():
     obs_values = pd.read_csv("Data/full_data_masked.csv",
                              delimiter="\t", usecols=[0, 1],
                              dtype=int)
+    y_values = np.bincount(obs_values["y"])
+    cut_145 = y_values[145:]
+    cut_half = y_values[139:]
+    single_plotter(y_values, xlabel="Y_pixel", ylabel="Counts",
+                   title="Full data plot")
+    single_plotter(cut_145, xlabel="Y_pixel", ylabel="Counts",
+                   title="Cut at 145")
+    single_plotter(cut_half, xlabel="Y_pixel", ylabel="Counts",
+                     title="Cut at 139")
+    # subregion_optmized(obs_values)
+    # check_snr2(obs_values)
+    # band_iso_single(obs_values)
+    # bad_summed_x = band_isolation(obs_values)
+    # single_plotter(bad_summed_x, xlabel="Y_pixel", ylabel="Counts",
+    #                  title="Bad data isolation")
 
-    check_snr2(obs_values)
-    # extract_background(obs_values)
-    # edge_plotter(obs_values)
-    # band_isolation(obs_values)
 
     # plotter_anim(experimental_dist, theoretical_dist, y_values)
     # test_exact, test_random = random_test()
