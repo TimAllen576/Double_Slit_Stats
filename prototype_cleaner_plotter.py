@@ -45,20 +45,6 @@ def plotter(data):
     plt.show()
 
 
-def plotter3d(data):
-    """Plots a 3d of pixel counts with x and y"""
-    x = data["x"]
-    y = data["y"]
-    xs = np.bincount(x)
-    ys = np.bincount(y)
-    tx = np.arange(len(xs))
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.plot(xs, ys, tx, label='parametric curve')
-    ax.legend()
-    plt.show()
-
-
 def main():
     """Main function"""
     path = "Data/full_data_masked.csv"

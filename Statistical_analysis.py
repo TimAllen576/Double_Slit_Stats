@@ -112,7 +112,7 @@ def random_test():
     gauss = 1 / np.sqrt(2 * np.pi) * np.exp(-x ** 2 / 2)
     scale = 1000
     gauss *= scale
-    gauss_rand = np.clip(gauss + (scale / 100) * (np.random.rand(10000) - 0.5),
+    gauss_rand = np.clip(gauss + (scale / 10) * (np.random.rand(10000) - 0.5),
                          0, None)
     gauss_rand *= np.sum(gauss) / np.sum(gauss_rand)
     plt.scatter(x, gauss)
@@ -343,15 +343,23 @@ def main():
     obs_values = pd.read_csv("Data/full_data_masked.csv",
                              delimiter="\t", usecols=[0, 1],
                              dtype=int)
-    y_values = np.bincount(obs_values["y"])
-    cut_145 = y_values[145:]
-    cut_half = y_values[139:]
-    single_plotter(y_values, xlabel="Y_pixel", ylabel="Counts",
-                   title="Full data plot")
-    single_plotter(cut_145, xlabel="Y_pixel", ylabel="Counts",
-                   title="Cut at 145")
-    single_plotter(cut_half, xlabel="Y_pixel", ylabel="Counts",
-                     title="Cut at 139")
+    data = obs_values.value_counts(sort=False)
+    dz = data.values
+    x = data.index.get_level_values(0)
+    y = data.index.get_level_values(1)
+    # y_values = np.bincount(obs_values["y"])
+    # x_values = np.arange(len(y_values), dtype=float)
+    z = np.zeros_like(x)
+    dx = np.ones_like(x)*0.5
+    dy = np.ones_like(x)*0.5
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    ax.bar3d(x, y, z, dx, dy, dz)
+    plt.show()
+    # cut_145 = y_values[145:]
+    # cut_half = y_values[139:]
+    # theoretical_values_145 = theoretical_distribution_opt(x_values[145:], *POPT)
+    # theory_145_scaled = theoretical_values_145 * len(y_values) / np.sum(
+    #     theoretical_values_145)
     # subregion_optmized(obs_values)
     # check_snr2(obs_values)
     # band_iso_single(obs_values)
@@ -364,7 +372,8 @@ def main():
     # test_exact, test_random = random_test()
     # multinomial_test(experimental_dist, theoretical_dist)
     # chi_squared_test(test_random, test_exact)
-    # chi_squared_test(experimental_dist, theoretical_dist)
+    # multinomial_test(test_random, test_exact)
+    # chi_squared_test(cut_145, theory_145_scaled)
     # plotter(experimental_dist, theoretical_dist)
 
 
