@@ -347,14 +347,19 @@ def main():
     dz = data.values
     x = data.index.get_level_values(0)
     y = data.index.get_level_values(1)
+    image_data = np.vstack((x, y, dz)).T
+    np.savetxt("Data/image_data.csv", image_data, delimiter=",", fmt="%d")
+    print(np.max(dz))
     # y_values = np.bincount(obs_values["y"])
     # x_values = np.arange(len(y_values), dtype=float)
-    z = np.zeros_like(x)
-    dx = np.ones_like(x)*0.5
-    dy = np.ones_like(x)*0.5
-    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-    ax.bar3d(x, y, z, dx, dy, dz)
-    plt.show()
+
+    # z = np.zeros_like(x)
+    # dx = np.ones_like(x)*0.5
+    # dy = np.ones_like(x)*0.5
+    # fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    # ax.bar3d(x, y, z, dx, dy, dz)
+    # plt.show()
+
     # cut_145 = y_values[145:]
     # cut_half = y_values[139:]
     # theoretical_values_145 = theoretical_distribution_opt(x_values[145:], *POPT)
